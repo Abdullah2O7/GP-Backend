@@ -58,6 +58,7 @@ def validate_registration_data(data, users_collection):
 
     return None, True
 
+
 def validate_login_data(data, users_collection):
     if 'email' not in data:
         return 'Email is required', False
