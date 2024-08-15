@@ -46,7 +46,21 @@ def register_api():
         'password': hashed_password
     }
     users_collection.insert_one(user_data)
-    return jsonify({'message': f'Account created for {data["username"]}!'}), 201
+    # Generate token
+    token = jwt.encode({
+        'user': data["username"],
+        'exp': datetime.utcnow() + timedelta(hours=1)
+    }, app.config['SECRET_KEY'], algorithm='HS256')
+
+    # Return user data with token
+    return jsonify({
+        'message': f'Account created for {data["username"]}!',
+        'user': {
+            'username': data['username'],
+            'email': data['email']
+        },
+        'token': token
+    }), 201
 
 @app.route("/api/login", methods=['POST'])
 def login_api():
@@ -65,7 +79,15 @@ def login_api():
             'exp': datetime.utcnow() + timedelta(hours=1)
         }, app.config['SECRET_KEY'], algorithm='HS256')
 
-        return jsonify({'token': token}), 200
+        # Return user data with token
+        return jsonify({
+            'message': 'Login successful!',
+            'user': {
+                'username': user['username'],
+                'email': user['email']
+            },
+            'token': token
+        }), 200
     else:
         return jsonify({'error': 'Invalid email or password'}), 401
     
