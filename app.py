@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import jwt
 import random
 from werkzeug.security import generate_password_hash, check_password_hash
-from validatoin import validate_registration_data, validate_login_data
+from validatoin import validate_registration_data, validate_login_data, validate_reset_password
 from functools import wraps
 
 app = Flask(__name__)
@@ -109,6 +109,27 @@ def verify(current_user):
         return jsonify({'Verification code': verification_code }), 200
     else:
         return jsonify({'error': 'Contact not found'}), 404
+    
+
+
+@app.route("/api/resetPassword", methods=['POST'])
+def resetPassword():
+    data = request.get_json()
+    error_message, valid = validate_reset_password(data)
+    if not valid:
+        return jsonify({'error': error_message}), 401
+    # Check if the user exists in the database
+    user = users_collection.find_one({'email': data['email']})
+    if not user:
+        return jsonify({'error': 'User with this email does not exist'}), 404
+
+    hashed_password = generate_password_hash(data['password'])
+
+    users_collection.update_one({'email': data['email']}, {'$set': {'password': hashed_password}})# Update the user's password in the database
+    return jsonify({
+        'message': 'Password reset successfully!',
+        'email': data['email'],
+    }), 200
     
 
 
