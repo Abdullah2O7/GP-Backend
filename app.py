@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 import jwt
+import random
 from werkzeug.security import generate_password_hash, check_password_hash
 from validatoin import validate_registration_data, validate_login_data
 from functools import wraps
@@ -90,6 +91,24 @@ def login_api():
         }), 200
     else:
         return jsonify({'error': 'Invalid email or password'}), 401
+
+
+@app.route("/api/verify", methods=['POST'])
+@token_required
+def verify(current_user):
+    data = request.get_json()
+    contact = data.get('email') or data.get('phone')
+    
+    if not contact:
+        return jsonify({'error': 'Email or phone number is required'}), 400
+    # Check if the contact exists in the database
+    user = users_collection.find_one({'$or': [{'email': contact}, {'phone': contact}]})
+
+    if user:
+        verification_code = str(random.randint(100000, 999999))  # Generate a 6-digit code
+        return jsonify({'Verification code': verification_code }), 200
+    else:
+        return jsonify({'error': 'Contact not found'}), 404
     
 
 
