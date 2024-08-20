@@ -15,6 +15,9 @@ client = MongoClient(app.config['MONGO_URI'])
 db = client['users']
 users_collection = db['users']
 
+diseases_db = client['Diseases']
+diseases_collection = db['diseases']
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -94,21 +97,20 @@ def login_api():
 
 
 @app.route("/api/verify", methods=['POST'])
-@token_required
-def verify(current_user):
+def verify():
     data = request.get_json()
-    contact = data.get('email') or data.get('phone')
+    contact = data.get('email') 
     
     if not contact:
-        return jsonify({'error': 'Email or phone number is required'}), 400
+        return jsonify({'error': 'Email is required'}), 400
     # Check if the contact exists in the database
-    user = users_collection.find_one({'$or': [{'email': contact}, {'phone': contact}]})
+    user = users_collection.find_one({'$or': [{'email': contact}]})
 
     if user:
         verification_code = str(random.randint(100000, 999999))  # Generate a 6-digit code
         return jsonify({'Verification code': verification_code }), 200
     else:
-        return jsonify({'error': 'Contact not found'}), 404
+        return jsonify({'error': 'Email not found'}), 404
     
 
 
