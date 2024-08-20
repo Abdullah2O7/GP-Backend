@@ -16,7 +16,7 @@ db = client['users']
 users_collection = db['users']
 
 diseases_db = client['Diseases']
-diseases_collection = db['diseases']
+diseases_collection = diseases_db['diseases']
 
 def token_required(f):
     @wraps(f)
@@ -134,6 +134,26 @@ def resetPassword():
     }), 200
     
 
+
+@app.route("/api/disease", methods=['GET'])
+def get_disease_description():
+    data = request.get_json()
+    disease_name = data.get('name')
+
+    if not disease_name:
+        return jsonify({'error': 'Disease name is required'}), 400
+
+    # Query the database for the disease
+    disease = diseases_collection.find_one({'name': disease_name})
+
+    if disease:
+        return jsonify({
+            'name': disease['name'],
+            'description': disease['description']
+        }), 200
+    else:
+        return jsonify({'error': 'Disease not found'}), 404
+    
 
 @app.route("/api/home", methods=['GET'])
 @token_required
