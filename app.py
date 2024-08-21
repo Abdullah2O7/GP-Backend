@@ -135,15 +135,9 @@ def resetPassword():
     
 
 
-@app.route("/api/disease", methods=['GET'])
-def get_disease_description():
-    data = request.get_json()
-    disease_name = data.get('name')
-
-    if not disease_name:
-        return jsonify({'error': 'Disease name is required'}), 400
-
-    # Query the database for the disease
+@app.route("/api/disease/<string:disease_name>", methods=['GET'])
+def get_disease_description(disease_name):
+    
     disease = diseases_collection.find_one({'name': disease_name})
 
     if disease:
