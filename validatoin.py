@@ -46,11 +46,10 @@ def validate_registration_data(data, users_collection):
         'confirm_password': validate_confirm_password
     }
 
-    for validation_rule in validation_rules.items():
+    for field, validation_rule in validation_rules.items():
         error_message = validation_rule()
         if error_message:
             return error_message, False
-
 
     existing_email = users_collection.find_one({'email': data['email']})
     if existing_email:
@@ -69,7 +68,6 @@ def validate_login_data(data, users_collection):
     if user and check_password_hash(user['password'], data['password']):
         return None, True
     return 'Invalid email or password', False    
-
 
 
 def validate_reset_password(data):
@@ -96,12 +94,14 @@ def validate_reset_password(data):
         'confirm_password': validate_confirm_password
     }
 
-    for validation_rule in validation_rules.items():
+    for field, validation_rule in validation_rules.items():
         error_message = validation_rule()
         if error_message:
             return error_message, False
-        
-        
+
+    return None, True
+
+
 def validate_editProfile(data, users_collection):
 
     def validate_username():
@@ -124,7 +124,7 @@ def validate_editProfile(data, users_collection):
         return None
 
     def validate_gender():
-        if 'gender' in data and data['gender'] not in ['Male', 'Female','male','female']:
+        if 'gender' in data and data['gender'] not in ['Male', 'Female', 'male', 'female']:
             return 'Invalid gender selection'
         return None
 
@@ -135,7 +135,7 @@ def validate_editProfile(data, users_collection):
         'gender': validate_gender
     }
 
-    for validation_rule in validation_rules.items():
+    for field, validation_rule in validation_rules.items():
         error_message = validation_rule()
         if error_message:
             return error_message, False
@@ -163,11 +163,11 @@ def validate_Change_password(data):
             return None
 
     validation_rules = {
-        'password': validate_password,
+        'new_password': validate_password,
         'confirm_password': validate_confirm_password
     }
 
-    for validation_rule in validation_rules.items():
+    for field, validation_rule in validation_rules.items():
         error_message = validation_rule()
         if error_message:
             return error_message, False
