@@ -13,3 +13,4 @@ MarkupSafe==2.1.5
 pycparser==2.22
 pymongo==4.8.0
 Werkzeug==3.0.3
+python-dotenv==1.0.1
