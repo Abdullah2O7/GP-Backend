@@ -20,7 +20,7 @@ app = Flask(__name__)
 app.config.from_object(Config)
 app.config['SECRET_KEY']
 
-client = MongoClient(app.config['MONGO_URI'])
+client = MongoClient(app.config['MONGO_URL'])
 db = client['users']
 users_collection = db['users']
 
@@ -186,6 +186,7 @@ def resetPassword():
         'email': data['email'],
     }), 200
     
+# ------------------ Get disease -------------------------------------
 
 @app.route("/api/disease/<string:disease_name>", methods=['GET'])
 def get_disease_description(disease_name):
@@ -200,8 +201,8 @@ def get_disease_description(disease_name):
     else:
         return jsonify({'error': 'Disease not found'}), 404
 
-
 # ---------------------- Get user profile Info ------------------------------
+
 @app.route("/api/user/profile/<string:username>", methods=['GET'])
 @token_required
 def get_user_profile(current_user, username):
