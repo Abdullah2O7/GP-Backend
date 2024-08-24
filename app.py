@@ -20,7 +20,7 @@ app = Flask(__name__)
 app.config.from_object(Config)
 app.config['SECRET_KEY']
 
-client = MongoClient(app.config['MONGO_URL'])
+client = MongoClient(app.config['MONGO_URI'])
 db = client['users']
 users_collection = db['users']
 
