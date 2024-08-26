@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, url_for
+from flask import Flask, request, jsonify, session
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 import jwt
@@ -11,7 +11,7 @@ from config import Config
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import requests
+
 
 
 load_dotenv()
@@ -20,6 +20,7 @@ app = Flask(__name__)
 
 app.config.from_object(Config)
 app.config['SECRET_KEY']
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
 
 client = MongoClient(app.config['MONGO_URI'])
 db = client['users']
@@ -177,69 +178,127 @@ def verify():
         return jsonify({'error': 'Email not found'}), 404
     
     
-#  ------------------- Reset password ---------------------------
+#  ---------------------- Verification ---------------------------------
+
+@app.route("/api/verify", methods=['POST'])
+def verify():
+    data = request.get_json()
+    email = data.get('email')
+
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+
+    # Check if the email exists in the database
+    user = users_collection.find_one({'email': email})
+
+    if user:
+        verification_code = str(random.randint(1000, 9999))  # Generate a 4-digit code
+        expiration_time = datetime.utcnow() + timedelta(minutes=5)  # Set expiration time to 5 minutes from now
+
+        # Store the verification code and expiration time in the database
+        users_collection.update_one(
+            {'email': email},
+            {'$set': {
+                'verification_code': verification_code,
+                'verification_expiration': expiration_time
+            }}
+        )
+        # Store email in the session
+        session['email'] = email
+
+        # Send verification code to user's email
+        try:
+            sender_email = app.config['SENDER_EMAIL']
+            sender_password = app.config['SENDER_PASSWORD']
+            subject = "Your Verification Code"
+            body = f"Your verification code is {verification_code}"
+
+            # Create the email
+            msg = MIMEMultipart()
+            msg['From'] = sender_email
+            msg['To'] = email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain'))
+
+            # Setup the server
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login(sender_email, sender_password)
+
+            # Send the email
+            text = msg.as_string()
+            server.sendmail(sender_email, email, text)
+            server.quit()
+
+            return jsonify({'message': 'Verification code sent to your email'}), 200
+
+        except Exception as e:
+            return jsonify({'error': f'Failed to send email: {str(e)}'}), 500
+
+    else:
+        return jsonify({'error': 'Email not found'}), 404
+    
+# ---------------- Internal -----------------------------
+
+@app.route("/api/resetPasswordInternal", methods=['POST'])
+def resetPassword_internal():
+    email = session.get('email')
+    if not email:
+        return jsonify({'error': 'Session expired or email not found'}), 400
+
+    data = request.get_json()
+    verification_code = data.get('verification_code')
+
+    if not verification_code:
+        return jsonify({'error': 'Verification code is required'}), 400
+
+    user = users_collection.find_one({'email': email})
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    if user.get('verification_code') != verification_code:
+        return jsonify({'error': 'Verification code is incorrect!'}), 400
+
+    # Check if the verification code is expired
+    if datetime.utcnow() > user.get('verification_expiration'):
+        return jsonify({'error': 'Verification code has expired'}), 400
+
+    # Allow the user to proceed to reset the password
+    return jsonify({'message': 'Verification successful, proceed to reset password.'}), 200
+
+# ---------------------- reset Password -------------------------
 
 @app.route("/api/resetPassword", methods=['POST'])
 def resetPassword():
+    email = session.get('email')
+    if not email:
+        return jsonify({'error': 'Session expired or email not found'}), 400
+
     data = request.get_json()
+    new_password = data.get('password')
+    confirm_password = data.get('confirm_password')
+
+    if not new_password or not confirm_password:
+        return jsonify({'error': 'Password and confirmation are required'}), 400
+
+    if new_password != confirm_password:
+        return jsonify({'error': 'Passwords do not match'}), 400
+
     error_message, valid = validate_reset_password(data)
     if not valid:
         return jsonify({'error': error_message}), 401
-    # Check if the user exists in the database
-    user = users_collection.find_one({'email': data['email']})
-    if not user:
-        return jsonify({'error': 'User with this email does not exist'}), 404
 
-    hashed_password = generate_password_hash(data['password'])
-
-    users_collection.update_one({'email': data['email']}, {'$set': {'password': hashed_password}})# Update the user's password in the database
-    return jsonify({
-        'message': 'Password reset successfully!',
-        'email': data['email'],
-    }), 200
-    
-# ------------------ Get disease -------------------------------------
-
-@app.route("/api/disease/<string:disease_name>", methods=['GET'])
-def get_disease_description(disease_name):
-    # Query the database for the disease
-    disease = diseases_collection.find_one({'name': disease_name})
-
-    if disease:
-        return jsonify({
-            'name': disease['name'],
-            'description': disease['description']
-        }), 200
-    else:
-        return jsonify({'error': 'Disease not found'}), 404
-
-# ---------------------- Get user profile Info ------------------------------
-
-@app.route("/api/user/profile/<string:username>", methods=['GET'])
-@token_required
-def get_user_profile(current_user, username):
-    # Query the database for the user by username
-    if current_user['username'] != username:
-        return jsonify({'error': 'You can only access your own profile'}), 403
-
-    user = users_collection.find_one(
-        {'username': username},
-        {'_id': 0, 'username': 1, 'email': 1, 'gender': 1, 'bio': 1}
+    # If all checks pass, reset the password
+    hashed_password = generate_password_hash(new_password)
+    users_collection.update_one(
+        {'email': email},
+        {'$set': {'password': hashed_password}, '$unset': {'verification_code': "", 'verification_expiration': ""}}
     )
 
-    if user:
-        profile_data = {
-            'name': user.get('username'),
-            'email': user.get('email'),
-            'gender': user.get('gender'),
-            'bio': user.get('bio')
-        }
-        return jsonify(profile_data), 200
-    else:
-        return jsonify({'error': 'User not found'}), 404
+    return jsonify({'message': 'Password reset successfully!'}), 200
 
-    
 #  ------------------- Edit Profile ---------------------------
+
 @app.route('/api/edit-profile', methods=['PATCH'])
 @token_required
 def edit_profile(current_user):
