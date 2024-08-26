@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, url_for
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 import jwt
@@ -11,6 +11,7 @@ from config import Config
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import requests
 
 
 load_dotenv()
@@ -122,17 +123,27 @@ def login_api():
 @app.route("/api/verify", methods=['POST'])
 def verify():
     data = request.get_json()
-    contact = data.get('email') 
-    
+    contact = data.get('email')
+
     if not contact:
         return jsonify({'error': 'Email is required'}), 400
-    
+
     # Check if the contact exists in the database
     user = users_collection.find_one({'email': contact})
 
     if user:
-        verification_code = str(random.randint(100000, 999999))  # Generate a 6-digit code
-        
+        verification_code = str(random.randint(1000, 9999))  # Generate a 4-digit code
+        expiration_time = datetime.utcnow() + timedelta(minutes=5)  # Set expiration time to 5 minutes from now
+
+        # Store the verification code and expiration time in the database
+        users_collection.update_one(
+            {'email': contact},
+            {'$set': {
+                'verification_code': verification_code,
+                'code_expires_at': expiration_time
+            }}
+        )
+
         # Send verification code to user's email
         try:
             sender_email = app.config['SENDER_EMAIL']
@@ -148,7 +159,7 @@ def verify():
             msg.attach(MIMEText(body, 'plain'))
 
             # Setup the server
-            server = smtplib.SMTP('smtp.gmail.com', 587)  
+            server = smtplib.SMTP('smtp.gmail.com', 587)
             server.starttls()
             server.login(sender_email, sender_password)
 
@@ -156,7 +167,16 @@ def verify():
             text = msg.as_string()
             server.sendmail(sender_email, contact, text)
             server.quit()
-
+            
+            # Trigger the resetPassword_internal API internally
+            reset_password_data = {
+                'email': contact,
+                'verification_code':request.json.get('verification_code')
+            }
+            reset_response = requests.post(
+                url_for('resetPassword_internal', _external=True),
+                json=reset_password_data
+            )
             return jsonify({'message': 'Verification code sent to your email'}), 200
 
         except Exception as e:
@@ -164,6 +184,7 @@ def verify():
 
     else:
         return jsonify({'error': 'Email not found'}), 404
+    
     
 #  ------------------- Reset password ---------------------------
 
