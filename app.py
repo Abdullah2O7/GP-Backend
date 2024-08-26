@@ -185,28 +185,60 @@ def verify():
     else:
         return jsonify({'error': 'Email not found'}), 404
     
+    #  ------------------ ResetPassword internal -----------------------
     
+@app.route("/api/resetPasswordInternal", methods=['POST'])
+def resetPassword_internal():
+
+    data = request.get_json()
+    email = data.get('email')
+    verification_code=data.get('verification_code')
+
+    if not all([email, verification_code]):
+        return jsonify({'error': 'Missing data'}), 400
+    user=users_collection.find_one({'email': email})
+
+    # print(datetime.utcnow().now)
+    # print(user.get('code_expires_at'))
+    
+    if user.get('verification_code') != verification_code:
+        return jsonify({'error': 'Verification code is incorrect!'})
+
+    # Check if the verification code is expired
+    if datetime.utcnow() > user.get('code_expires_at'):
+        return jsonify({'error': 'Verification code has expired'}), 400
+    
+    reset_password_url = url_for('resetPassword', _external=True)
+    reset_password_data = {
+        'password': request.json.get('password'),
+        'confirm_password': request.json.get('confirm_password'),
+        'email':email
+    }
+    response = requests.post(reset_password_url, json=reset_password_data)
+
+    return jsonify(response.json()), response.status_code
+
 #  ------------------- Reset password ---------------------------
 
 @app.route("/api/resetPassword", methods=['POST'])
 def resetPassword():
     data = request.get_json()
+    new_password = data.get('password')
+    email=data.get('email')
+    if not new_password:
+        return jsonify({'error': 'password is required'}), 400
     error_message, valid = validate_reset_password(data)
     if not valid:
         return jsonify({'error': error_message}), 401
-    # Check if the user exists in the database
-    user = users_collection.find_one({'email': data['email']})
-    if not user:
-        return jsonify({'error': 'User with this email does not exist'}), 404
 
-    hashed_password = generate_password_hash(data['password'])
+    # If all checks pass, reset the password
+    hashed_password = generate_password_hash(new_password)
+    users_collection.update_one(
+        {'email': email},
+        {'$set': {'password': hashed_password}, '$unset': {'verification_code': "", 'code_expires_at': ""}}
+    )
 
-    users_collection.update_one({'email': data['email']}, {'$set': {'password': hashed_password}})# Update the user's password in the database
-    return jsonify({
-        'message': 'Password reset successfully!',
-        'email': data['email'],
-    }), 200
-    
+    return jsonify({'message': 'Password reset successfully!'}), 200
 # ------------------ Get disease -------------------------------------
 
 @app.route("/api/disease/<string:disease_name>", methods=['GET'])
