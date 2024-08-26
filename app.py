@@ -13,10 +13,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 
-
 load_dotenv()
 app = Flask(__name__)
-
 
 app.config.from_object(Config)
 app.config['SECRET_KEY']
@@ -120,6 +118,20 @@ def login_api():
     else:
         return jsonify({'error': 'Invalid email or password'}), 401
     
+# ------------------- Disease description ------------------------
+    
+@app.route("/api/disease/<string:disease_name>", methods=['GET'])
+def get_disease_description(disease_name):
+
+    disease = diseases_collection.find_one({'name': disease_name})
+
+    if disease:
+        return jsonify({
+            'name': disease['name'],
+            'description': disease['description']
+        }), 200
+    else:
+        return jsonify({'error': 'Disease not found'}), 404
     
 #  ---------------------- Verification ---------------------------------
 
