@@ -119,63 +119,6 @@ def login_api():
         }), 200
     else:
         return jsonify({'error': 'Invalid email or password'}), 401
-
-#  ---------------------- Verification ---------------------------------
-@app.route("/api/verify", methods=['POST'])
-def verify():
-    data = request.get_json()
-    contact = data.get('email')
-
-    if not contact:
-        return jsonify({'error': 'Email is required'}), 400
-
-    # Check if the contact exists in the database
-    user = users_collection.find_one({'email': contact})
-
-    if user:
-        verification_code = str(random.randint(1000, 9999))  # Generate a 4-digit code
-        expiration_time = datetime.utcnow() + timedelta(minutes=5)  # Set expiration time to 5 minutes from now
-
-        # Store the verification code and expiration time in the database
-        users_collection.update_one(
-            {'email': contact},
-            {'$set': {
-                'verification_code': verification_code,
-                'code_expires_at': expiration_time
-            }}
-        )
-
-        # Send verification code to user's email
-        try:
-            sender_email = app.config['SENDER_EMAIL']
-            sender_password = app.config['SENDER_PASSWORD']
-            subject = "Your Verification Code"
-            body = f"Your verification code is {verification_code}"
-
-            # Create the email
-            msg = MIMEMultipart()
-            msg['From'] = sender_email
-            msg['To'] = contact
-            msg['Subject'] = subject
-            msg.attach(MIMEText(body, 'plain'))
-
-            # Setup the server
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login(sender_email, sender_password)
-
-            # Send the email
-            text = msg.as_string()
-            server.sendmail(sender_email, contact, text)
-            server.quit()
-            
-            return jsonify({'message': 'Verification code sent to your email'}), 200
-
-        except Exception as e:
-            return jsonify({'error': f'Failed to send email: {str(e)}'}), 500
-
-    else:
-        return jsonify({'error': 'Email not found'}), 404
     
     
 #  ---------------------- Verification ---------------------------------
@@ -296,6 +239,31 @@ def resetPassword():
     )
 
     return jsonify({'message': 'Password reset successfully!'}), 200
+
+# ---------------------- Get user profile Info ------------------------------
+
+@app.route("/api/user/profile/<string:username>", methods=['GET'])
+@token_required
+def get_user_profile(current_user, username):
+    # Query the database for the user by username
+    if current_user['username'] != username:
+        return jsonify({'error': 'You can only access your own profile'}), 403
+
+    user = users_collection.find_one(
+        {'username': username},
+        {'_id': 0, 'username': 1, 'email': 1, 'gender': 1, 'bio': 1}
+    )
+
+    if user:
+        profile_data = {
+            'name': user.get('username'),
+            'email': user.get('email'),
+            'gender': user.get('gender'),
+            'bio': user.get('bio')
+        }
+        return jsonify(profile_data), 200
+    else:
+        return jsonify({'error': 'User not found'}), 404
 
 #  ------------------- Edit Profile ---------------------------
 
