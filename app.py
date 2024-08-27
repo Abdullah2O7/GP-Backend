@@ -31,6 +31,12 @@ diseases_collection = diseases_db['diseases']
 messages_db = client['Messages']
 messages_collection = messages_db['messages']
 
+Faq_db = client['FAQ']
+faq_collection = Faq_db['faq']
+
+contact_support_db = client['Contact_support']
+contact_support_collection = contact_support_db['contact_support']
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -406,6 +412,46 @@ def contact_us(current_user):
 
     except Exception as e:
         return jsonify({'error': f'Failed to send acknowledgment email: {str(e)}'}), 500
+    
+# --------------- faq ----------------------------
+
+@app.route("/api/faq", methods=['POST'])
+@token_required
+def get_faq(current_user):
+    data = request.get_json()
+    question = data.get('question')
+
+    if not question:
+        return jsonify({'error': 'Question is required'}), 400
+
+    # Find the FAQ in the database
+    faq_entry = faq_collection.find_one({'Question': question})
+
+    if not faq_entry:
+        return jsonify({'error': 'No answer found for the provided question'}), 404
+
+    # Assuming the answer is stored as a string with steps separated by commas
+    steps = faq_entry.get('answer').split(', ')
+
+    return jsonify({
+        'question': faq_entry.get('Question'),
+        'answer': faq_entry.get('answer')
+    }), 200
+
+# --------------- Contact Support ----------------------
+
+@app.route("/api/contact-support/<string:contact_way>", methods=['GET'])
+def get_contact_support(contact_way):
+    contact_type= contact_support_collection.find_one({'contact': contact_way})
+    if not contact_type:
+        return jsonify({"error": "Please specify a contact type"}), 400
+
+    return jsonify({
+        'way': contact_type['contact'],
+        'contact': contact_type['body']
+    }), 200
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
