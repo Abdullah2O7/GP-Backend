@@ -21,11 +21,15 @@ app.config['SECRET_KEY']
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=5)
 
 client = MongoClient(app.config['MONGO_URI'])
+
 db = client['users']
 users_collection = db['users']
 
 diseases_db = client['Diseases']
 diseases_collection = diseases_db['diseases']
+
+messages_db = client['Messages']
+messages_collection = messages_db['messages']
 
 def token_required(f):
     @wraps(f)
@@ -349,7 +353,59 @@ def changePassword(current_user):
                                 {'$set': {'password': hashed_password}})  # Update the user's passw
     return jsonify({'message': 'Password updated successfully!'}), 200
 
-# ------------------------------------------------
+# ------------------ Contact Us ------------------------------
+
+@app.route("/api/contactUS", methods=['POST'])
+@token_required
+def contact_us(current_user):
+    data = request.get_json()
+    firstname = data.get('firstname')
+    lastname = data.get('lastname')
+    email = current_user['email']
+    message = data.get('message')
+
+    # Validate input
+    if not all([firstname, lastname, email, message]):
+        return jsonify({'error': 'All fields are required'}), 400
+
+    # Store the contact information and message in the database
+    contact_entry = {
+        'firstname': firstname,
+        'lastname': lastname,
+        'email': email,
+        'message': message,
+        'created_at': datetime.utcnow()
+    }
+    messages_collection.insert_one(contact_entry)
+
+    # Send an acknowledgment email to the user
+    try:
+        sender_email = app.config['SENDER_EMAIL']
+        sender_password = app.config['SENDER_PASSWORD']
+        subject = "Thank You for Contacting Us"
+        body = f"Dear {firstname} {lastname},\n\nThank you for reaching out to us. We have received your message and will get back to you shortly.\n\nBest regards,\nMalaz"
+
+        # Create the email
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Setup the server
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+
+        # Send the email
+        text = msg.as_string()
+        server.sendmail(sender_email, email, text)
+        server.quit()
+
+        return jsonify({'message': 'Thank you for contacting us. We have received your message.'}), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to send acknowledgment email: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
