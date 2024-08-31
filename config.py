@@ -1,4 +1,3 @@
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -7,3 +6,5 @@ class Config:
     MONGO_URI = 'mongodb+srv://abdullahmohamed1047:HuexVTFWCHGP8wXU@cluster0.ydoaic1.mongodb.net/'
     SENDER_EMAIL = 'abdullah.mohamed1047@gmail.com'
     SENDER_PASSWORD = 'ozwd vhmw aada pxnq'
+
+# mongodb://localhost:27017
