@@ -342,24 +342,24 @@ def get_disease_description(current_user, testname, disease_name):
                 {'email': current_user['email']},  
                 {'$push': {'tests': new_test_entry}}
             )
+        if current_user.get('notification_enabled', False):
+            registration_token = current_user.get('fcm_token')
+            if registration_token:
+                try:
+                    message_title = f"Test '{testname}' Completed"
+                    message_body = f"You successfully completed the test for {disease_name}."
+                    notification_response = send_push_notification(registration_token, message_title, message_body)
 
-        registration_token = current_user.get('fcm_token')
-        if registration_token:
-            try:
-                message_title = f"Test '{testname}' Completed"
-                message_body = f"You successfully completed the test for {disease_name}."
-                notification_response = send_push_notification(registration_token, message_title, message_body)
-
-                if notification_response:
-                    print(f"Notification sent successfully to {registration_token}")
-                else:
-                    print("Failed to send notification.")
-            except Exception as e:
-                print(f"Error sending notification: {e}")
+                    if notification_response:
+                        print(f"Notification sent successfully to {registration_token}")
+                    else:
+                        print("Failed to send notification.")
+                except Exception as e:
+                    print(f"Error sending notification: {e}")
 
         if current_user.get('reminder_enabled', False):
             try:
-                job_id = f'test_reminder_{md5(current_user["email"].encode()).hexdigest()}_{testname}'  # Unique job ID
+                job_id = f'test_reminder_{md5(current_user["email"].encode()).hexdigest()}_{testname}'  
                 scheduler.add_job(
                     id=job_id,
                     func=send_test_reminder_notification,
@@ -380,6 +380,28 @@ def get_disease_description(current_user, testname, disease_name):
 
     else:
         return jsonify({'error': 'Disease not found'}), 404
+
+# ------------------- Notification_toggle ----------------------
+
+@app.route('/api/notification-toggle', methods=['PATCH'])
+@token_required
+def toggle_notification(current_user):
+    data = request.get_json()
+
+    if 'notifications_enabled' not in data:
+        return jsonify({'error': 'Notification toggle state is required.'}), 400
+
+    
+    notifications_enabled = data['notifications_enabled']
+    users_collection.update_one(
+        {'email': current_user['email']},
+        {'$set': {'notifications_enabled': notifications_enabled}}
+    )
+
+    return jsonify({
+        'message': 'Notification setting updated successfully!',
+        'notifications_enabled': notifications_enabled
+    }), 200
 
 # ------------- Toggle Reminder ----------------
 @app.route('/api/toggle_reminder', methods=['POST'])
@@ -864,11 +886,11 @@ def get_all_contacts(current_user):
 def delete_account(current_user):
     data = request.get_json()
     password = data.get('password')
-    # checks if password exists in data
+    
     if not password:
         return jsonify({'error': 'Password is required to delete the account.'}), 400
 
-    # checks with the password in the database
+    
     if not check_password_hash(current_user['password'], password):
         return jsonify({'error': 'Incorrect password.'}), 400
 
@@ -882,11 +904,10 @@ def delete_account(current_user):
 @app.route("/api/deleteAllTests", methods=['POST'])
 @token_required
 def delete_all_tests(current_user):
-    # Define the filter and update operation
+    
     filter_query = {'_id': current_user['_id']}
     update_query = {'$set': {'tests': []}}
 
-    # Perform the update operation
     result = users_collection.update_one(filter_query, update_query)
 
     if result.modified_count > 0:
