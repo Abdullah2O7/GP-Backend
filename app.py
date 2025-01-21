@@ -66,7 +66,7 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = request.headers.get('Authorization')  
         if not token:
-            return jsonify({'Alert': 'Token is missing!'}), 401
+            return f(None, *args, **kwargs)
 
         try:
             blacklisted = blacklist_tokens.find_one({'token': token})
@@ -143,16 +143,18 @@ def register_api():
             'email': data['email'],
             'password': hashed_password,
             'fcm_token': fcm_token,
-            'picture': default_image_base64
+            'picture': default_image_base64,
+            'login_activity': []
         }
 
-        try:
-            users_collection.insert_one(user_data)
-        except Exception as e:
-            return jsonify({'error': 'Unable to create user'}), 500
+        result = users_collection.insert_one(user_data)
+        user_id = str(result.inserted_id)
+
+        # print(user_id)
 
         try:
             token = jwt.encode({
+                'user_id': user_id,
                 'username': data["username"],
                 'email': data["email"],
                 'exp': datetime.utcnow() + timedelta(hours=1)
@@ -196,6 +198,7 @@ def login_api():
 
         # Generate token using the username
         token = jwt.encode({
+            'user_id': str(user["_id"]),
             'username': user["username"],
             'email': user["email"],
             'exp': datetime.utcnow() + timedelta(hours=1)
@@ -217,7 +220,7 @@ def login_api():
 
         if existing_activity:
             users_collection.update_one(
-                {'username': user['username'], 'login_activity.mobile': phone_info},
+                {'_id': user['_id'], 'login_activity.mobile': phone_info},
                 {'$set': {
                     'login_activity.$.time': local_time.strftime('%I:%M %p'),
                     'login_activity.$.date': local_time.strftime('%d-%m-%Y')
@@ -279,7 +282,7 @@ def update_fcm_token(current_user):
 @token_required
 def login_activity(current_user):
     user_data = users_collection.find_one(
-        {'username': current_user['username']},
+        {'_id': current_user['_id']},
         {'login_activity': 1, '_id': 0}
     )
 
@@ -306,6 +309,10 @@ def generate_unique_id():
 @app.route("/api/test/<string:testname>/<string:disease_name>", methods=['GET'])
 @token_required
 def get_disease_description(current_user, testname, disease_name):
+
+    # if not current_user:
+    #     return jsonify({'message':'Login to continue.'}), 401
+
     disease = diseases_collection.find_one({'name': disease_name})
 
     if disease:
@@ -341,24 +348,24 @@ def get_disease_description(current_user, testname, disease_name):
                 {'email': current_user['email']},  
                 {'$push': {'tests': new_test_entry}}
             )
+        if current_user.get('notification_enabled', False):
+            registration_token = current_user.get('fcm_token')
+            if registration_token:
+                try:
+                    message_title = f"Test '{testname}' Completed"
+                    message_body = f"You successfully completed the test for {disease_name}."
+                    notification_response = send_push_notification(registration_token, message_title, message_body)
 
-        registration_token = current_user.get('fcm_token')
-        if registration_token:
-            try:
-                message_title = f"Test '{testname}' Completed"
-                message_body = f"You successfully completed the test for {disease_name}."
-                notification_response = send_push_notification(registration_token, message_title, message_body)
-
-                if notification_response:
-                    print(f"Notification sent successfully to {registration_token}")
-                else:
-                    print("Failed to send notification.")
-            except Exception as e:
-                print(f"Error sending notification: {e}")
+                    if notification_response:
+                        print(f"Notification sent successfully to {registration_token}")
+                    else:
+                        print("Failed to send notification.")
+                except Exception as e:
+                    print(f"Error sending notification: {e}")
 
         if current_user.get('reminder_enabled', False):
             try:
-                job_id = f'test_reminder_{md5(current_user["email"].encode()).hexdigest()}_{testname}'  # Unique job ID
+                job_id = f'test_reminder_{md5(current_user["email"].encode()).hexdigest()}_{testname}'  
                 scheduler.add_job(
                     id=job_id,
                     func=send_test_reminder_notification,
@@ -379,6 +386,49 @@ def get_disease_description(current_user, testname, disease_name):
 
     else:
         return jsonify({'error': 'Disease not found'}), 404
+    
+    # ----------------
+
+@app.route("/api/guest/test/<string:testname>/<string:disease_name>", methods=['GET'])
+def get_disease_description_guest(testname, disease_name):
+    """
+    Endpoint for guests to get the disease description without requiring authentication.
+    """
+    # Fetch the disease from the database
+    disease = diseases_collection.find_one({'name': disease_name})
+    
+    if not disease:
+        return jsonify({'error': 'Disease not found'}), 404
+    
+    # Return the disease details
+    return jsonify({
+        'name': disease['name'],
+        'description': disease['description'],
+        'link': disease['link']
+    }), 200
+
+
+# ------------------- Notification_toggle ----------------------
+
+@app.route('/api/notification-toggle', methods=['PATCH'])
+@token_required
+def toggle_notification(current_user):
+    data = request.get_json()
+
+    if 'notifications_enabled' not in data:
+        return jsonify({'error': 'Notification toggle state is required.'}), 400
+
+    
+    notifications_enabled = data['notifications_enabled']
+    users_collection.update_one(
+        {'email': current_user['email']},
+        {'$set': {'notifications_enabled': notifications_enabled}}
+    )
+
+    return jsonify({
+        'message': 'Notification setting updated successfully!',
+        'notifications_enabled': notifications_enabled
+    }), 200
 
 # ------------- Toggle Reminder ----------------
 @app.route('/api/toggle_reminder', methods=['POST'])
@@ -632,7 +682,7 @@ def get_user_profile(current_user):
 
     print(current_user['email'])
     user = users_collection.find_one(
-        {'email': current_user['email']},
+        {'_id': current_user['_id']},
         {'_id': 1, 'username': 1, 'email': 1, 'gender': 1, 'bio': 1, 'picture': 1}
     )
     if user:
@@ -652,7 +702,7 @@ def get_user_profile(current_user):
 
 def validate_image_size(base64_image):
     # Decode the base64 image to check its size
-    image_data = base64.b64decode(base64_image.split(',')[1])  # Strip metadata if present
+    image_data = base64.b64decode(base64_image.split(',')[1])  
     return len(image_data) <= 1 * 1024 * 1024  # 1 MB limit
 
 @app.route('/api/edit-profile', methods=['PATCH'])
@@ -674,6 +724,7 @@ def edit_profile(current_user):
         if email_exists and email_exists['username'] != current_user['username']:
             return jsonify({'error': 'Email is already in use by another account.'}), 400
         update_fields['email'] = data['email']
+    
 
     if 'username' in data:
         # username_exists = users_collection.find_one({'username': data['username']})
@@ -696,12 +747,13 @@ def edit_profile(current_user):
     if not update_fields:
         return jsonify({'message': 'No changes made. Profile saved successfully!'}), 200
 
-    users_collection.update_one({'username': current_user['username']}, {'$set': update_fields})
+    users_collection.update_one({'email': current_user['email']}, {'$set': update_fields})
 
-    updated_user = users_collection.find_one({'username': update_fields.get('username', current_user['username'])})
+    updated_user = users_collection.find_one({'email': update_fields.get('email', current_user['email'])})
 
     try:
         token = jwt.encode({
+            'user_id': str(updated_user['_id']),
             'username': updated_user.get('username', current_user['username']),
             'email': updated_user.get('email', current_user['email']),
             'exp': datetime.utcnow() + timedelta(hours=1)
@@ -738,7 +790,7 @@ def changePassword(current_user):
 
     hashed_password = generate_password_hash(data['new_password'])
 
-    users_collection.update_one({'username': current_user['username']},
+    users_collection.update_one({'email': current_user['email']},
                                 {'$set': {'password': hashed_password}})  # Update the user's passw
     return jsonify({'message': 'Password updated successfully!'}), 200
 
@@ -863,16 +915,16 @@ def get_all_contacts(current_user):
 def delete_account(current_user):
     data = request.get_json()
     password = data.get('password')
-    # checks if password exists in data
+    
     if not password:
         return jsonify({'error': 'Password is required to delete the account.'}), 400
 
-    # checks with the password in the database
+    
     if not check_password_hash(current_user['password'], password):
         return jsonify({'error': 'Incorrect password.'}), 400
 
     journal_collection.delete_many({'email': current_user['email']})
-    users_collection.delete_one({'username': current_user['username']})
+    users_collection.delete_one({'email': current_user['email']})
 
     return jsonify({'message': f'Account for {current_user["username"]} has been deleted.'}), 200
 
@@ -881,11 +933,10 @@ def delete_account(current_user):
 @app.route("/api/deleteAllTests", methods=['POST'])
 @token_required
 def delete_all_tests(current_user):
-    # Define the filter and update operation
+    
     filter_query = {'_id': current_user['_id']}
     update_query = {'$set': {'tests': []}}
 
-    # Perform the update operation
     result = users_collection.update_one(filter_query, update_query)
 
     if result.modified_count > 0:
@@ -943,36 +994,32 @@ def create_journal(current_user):
     unique_id = generate_unique_id()
     current_date = datetime.utcnow() 
 
-    # New journal entry structure
     new_entry = {
         '_id': unique_id,
         'title': title,
         'content': content
     }
 
-    # Check if there's already a journal for today
     journal_entry = journal_collection.find_one({
-        'email': current_user['email'],
+        '_id': current_user['_id'],
         'journal.entries.date': current_date.strftime('%d-%m-%Y')  
     })
 
     if journal_entry:
-        # Append the new entry to the existing journal for the current date
         journal_collection.update_one(
-            {'email': current_user['email'], 'journal.entries.date': current_date.strftime('%d-%m-%Y')},
-            {'$push': {'journal.$.entries': new_entry}}  # Push new entry to the matching journal date
+            {'_id': current_user['_id'], 'journal.entries.date': current_date.strftime('%d-%m-%Y')},
+            {'$push': {'journal.$.entries': new_entry}}  
         )
     else:
         # If no journal entry exists for today, create a new journal entry
         new_journal_entry = {
-            'date': current_date.strftime('%d-%m-%Y'),  # Store formatted date
+            'date': current_date.strftime('%d-%m-%Y'), 
             'entries': [new_entry]
         }
 
-        # Update the user's journal array with the new journal entry
         journal_collection.update_one(
-            {'email': current_user['email']},
-            {'$push': {'journal': new_journal_entry}},  # Push new journal to the user's journal array
+            {'_id': current_user['_id']},
+            {'$push': {'journal': new_journal_entry}},  
             upsert=True
         )
 
@@ -982,7 +1029,7 @@ def create_journal(current_user):
 def generate_unique_id():
     return str(uuid.uuid4())
 
-@app.route("/api/create_journal2", methods=['POST'])
+@app.route("/api/create_jou2", methods=['POST'])
 @token_required
 def create_journal2(current_user):
     data = request.get_json()
@@ -1054,38 +1101,84 @@ def edit_journal(current_user):
     if 'id' not in data or 'new_content' not in data:
         return jsonify({'error': 'id and new_content are required'}), 400
 
-    journal_id = data['id']
-    new_title = data.get('new_title')  # Optional field
-    new_content = data['new_content']
-    new_date = datetime.utcnow().strftime('%d-%m-%Y')  # Current date
 
-    # Construct the update fields
+    user = journal_collection.find_one({'_id': current_user['_id']})
+
+    journal_id = data['id']
+    new_title = data.get('new_title')  
+    new_content = data['new_content']
+    current_date = datetime.utcnow().strftime('%d-%m-%Y')  # Format the date as day-month-year
+
     update_fields = {
         'journal.$[journal].entries.$[entry].content': new_content,
-        'journal.$[journal].entries.$[entry].date': new_date
+        'journal.$[journal].entries.$[entry].date': current_date
     }
     if new_title:
         update_fields['journal.$[journal].entries.$[entry].title'] = new_title
 
-    # Perform the update
+
+    print(user['_id'])
+
+    # Perform update operation with array filters
     result = journal_collection.update_one(
         {
-            'email': current_user['email'],
-            'journal.entries._id': journal_id  # Locate the journal entry by its unique ID
+            '_id': user['_id'], 
+            'journal.entries._id': journal_id  
         },
         {
             '$set': update_fields
         },
         array_filters=[
-            {'journal.date': {'$eq': datetime.utcnow().strftime('%d-%m-%Y')}},  # Match journal entry by date
-            {'entry._id': journal_id}  # Match the specific entry by ID
+            {'journal.entries': {'$exists': True}},  # Ensure the journal has entries
+            {'entry._id': journal_id}  # Match the specific entry ID
         ]
     )
 
+    # Check if update was successful
     if result.matched_count == 0:
         return jsonify({'error': 'Journal entry not found or does not match the user'}), 404
 
     return jsonify({'message': 'Journal entry updated successfully with new date!'}), 200
+
+
+# @app.route("/api/edit_journal", methods=['PUT'])
+# @token_required
+# def edit_journal(current_user):
+#     data = request.get_json()
+
+#     if 'id' not in data or 'new_content' not in data:
+#         return jsonify({'error': 'id and new_content are required'}), 400
+
+#     journal_id = data['id']
+#     new_title = data.get('new_title') 
+#     new_content = data['new_content']
+#     new_date = datetime.utcnow().strftime('%d-%m-%Y')  
+
+#     update_fields = {
+#         'journal.$[journal].entries.$[entry].content': new_content,
+#         'journal.$[journal].entries.$[entry].date': new_date
+#     }
+#     if new_title:
+#         update_fields['journal.$[journal].entries.$[entry].title'] = new_title
+
+#     result = journal_collection.update_one(
+#         {
+#             'email': current_user['email'],
+#             'journal.entries._id': journal_id  # Locate the journal entry by its unique ID
+#         },
+#         {
+#             '$set': update_fields
+#         },
+#         array_filters=[
+#             {'journal.date': {'$eq': datetime.utcnow().strftime('%d-%m-%Y')}},  # Match journal entry by date
+#             {'entry._id': journal_id} 
+#         ]
+#     )
+
+#     if result.matched_count == 0:
+#         return jsonify({'error': 'Journal entry not found or does not match the user'}), 404
+
+#     return jsonify({'message': 'Journal entry updated successfully with new date!'}), 200
 
 # ------------ Get journals -----------------------
 
