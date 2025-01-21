@@ -91,16 +91,14 @@ def token_required(f):
 def home():
     return jsonify({'message': f'Welcome, Abdullah!'}), 200
 
-if os.getenv('AZURE_ENVIRONMENT') == 'production':  
-    # Fetch Firebase credentials from environment variables
-    firebase_credentials_json = os.getenv('FIREBASE_CREDENTIALS')
+firebase_credentials_json = os.getenv('FIREBASE_CREDENTIALS')
 
-    if firebase_credentials_json:
-        firebase_credentials_dict = json.loads(firebase_credentials_json)
-        cred = credentials.Certificate(firebase_credentials_dict)
-        firebase_admin.initialize_app(cred)
-    else:
-        raise ValueError("Firebase credentials not found in environment variables.")
+if firebase_credentials_json:
+    firebase_credentials_dict = json.loads(firebase_credentials_json)
+    cred = credentials.Certificate(firebase_credentials_dict)
+    firebase_admin.initialize_app(cred)
+else:
+    raise ValueError("Firebase credentials not found in environment variables.")
 else:
     # For non-production environments
     cred = credentials.Certificate('graduationproject-4f4ab-firebase-adminsdk-spja4-dbb848a1df.json')
