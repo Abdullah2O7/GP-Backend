@@ -1,0 +1,4 @@
+{
+    "appService.defaultWebAppToDeploy": "/subscriptions/d6af6eb0-0f98-46b6-b115-ca63b2d4fb13/resourceGroups/GraduationProject/providers/Microsoft.Web/sites/GPEndpoints",
+    "appService.deploySubpath": "."
+}
