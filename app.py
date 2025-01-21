@@ -94,15 +94,15 @@ def home():
 firebase_credentials_json = os.getenv('FIREBASE_CREDENTIALS')
 
 if firebase_credentials_json:
+    # Parse the credentials from the environment variable
     firebase_credentials_dict = json.loads(firebase_credentials_json)
     cred = credentials.Certificate(firebase_credentials_dict)
     firebase_admin.initialize_app(cred)
 else:
-    raise ValueError("Firebase credentials not found in environment variables.")
-else:
-    # For non-production environments
+    # If no environment variable is set, use the local file
     cred = credentials.Certificate('graduationproject-4f4ab-firebase-adminsdk-spja4-dbb848a1df.json')
     firebase_admin.initialize_app(cred)
+
 
 def send_push_notification(token, title, body):
     message = messaging.Message(
