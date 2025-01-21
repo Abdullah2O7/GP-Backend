@@ -102,14 +102,9 @@ if os.getenv('AZURE_ENVIRONMENT') == 'production':
     else:
         raise ValueError("Firebase credentials not found in environment variables.")
 else:
-    # For non-production (local or other environments)
-    firebase_credentials_file = os.getenv('FIREBASE_CREDENTIALS_FILE')
-
-    if firebase_credentials_file and os.path.exists(firebase_credentials_file):
-        cred = credentials.Certificate(firebase_credentials_file)
-        firebase_admin.initialize_app(cred)
-    else:
-        raise ValueError("Firebase credentials file path not found in environment variables or the file does not exist.")
+    # For non-production environments
+    cred = credentials.Certificate('graduationproject-4f4ab-firebase-adminsdk-spja4-dbb848a1df.json')
+    firebase_admin.initialize_app(cred)
 
 def send_push_notification(token, title, body):
     message = messaging.Message(
