@@ -992,7 +992,7 @@ def create_journal(current_user):
     title = data['title']
     content = data['content']
     unique_id = generate_unique_id()
-    current_date = datetime.utcnow() 
+    current_date = datetime.utcnow()
 
     new_entry = {
         '_id': unique_id,
@@ -1000,30 +1000,37 @@ def create_journal(current_user):
         'content': content
     }
 
+    user_id = str(current_user['_id'])  # Ensure _id is treated as a string
+
+    print(f"User ID: {user_id}")  # Debugging log
+    print(f"Looking for journal entry on date: {current_date.strftime('%d-%m-%Y')}")
+
     journal_entry = journal_collection.find_one({
-        '_id': current_user['_id'],
-        'journal.entries.date': current_date.strftime('%d-%m-%Y')  
+        '_id': user_id,
+        'journal.date': current_date.strftime('%d-%m-%Y')  
     })
 
     if journal_entry:
-        journal_collection.update_one(
-            {'_id': current_user['_id'], 'journal.entries.date': current_date.strftime('%d-%m-%Y')},
-            {'$push': {'journal.$.entries': new_entry}}  
+        update_result = journal_collection.update_one(
+            {'_id': user_id, 'journal.date': current_date.strftime('%d-%m-%Y')},
+            {'$push': {'journal.$.entries': new_entry}}
         )
+        print(f"Updated existing journal: {update_result.modified_count} document(s) updated.")
     else:
-        # If no journal entry exists for today, create a new journal entry
         new_journal_entry = {
-            'date': current_date.strftime('%d-%m-%Y'), 
+            'date': current_date.strftime('%d-%m-%Y'),
             'entries': [new_entry]
         }
 
-        journal_collection.update_one(
-            {'_id': current_user['_id']},
-            {'$push': {'journal': new_journal_entry}},  
+        update_result = journal_collection.update_one(
+            {'_id': user_id},
+            {'$push': {'journal': new_journal_entry}},
             upsert=True
         )
+        print(f"Created new journal entry: {update_result.upserted_id}")
 
     return jsonify({'message': 'Journal entry created successfully!'}), 201
+
 
 #  -----------------------------------------
 def generate_unique_id():
@@ -1101,13 +1108,11 @@ def edit_journal(current_user):
     if 'id' not in data or 'new_content' not in data:
         return jsonify({'error': 'id and new_content are required'}), 400
 
-
-    user = journal_collection.find_one({'_id': current_user['_id']})
-
+    user_id = str(current_user['_id'])  # Ensure _id is treated as a string
     journal_id = data['id']
-    new_title = data.get('new_title')  
+    new_title = data.get('new_title')
     new_content = data['new_content']
-    current_date = datetime.utcnow().strftime('%d-%m-%Y')  # Format the date as day-month-year
+    current_date = datetime.utcnow().strftime('%d-%m-%Y')  # Format date as day-month-year
 
     update_fields = {
         'journal.$[journal].entries.$[entry].content': new_content,
@@ -1116,20 +1121,20 @@ def edit_journal(current_user):
     if new_title:
         update_fields['journal.$[journal].entries.$[entry].title'] = new_title
 
-
-    print(user['_id'])
+    print(f"User ID: {user_id}")
+    print(f"Updating journal entry with ID: {journal_id}")
 
     # Perform update operation with array filters
     result = journal_collection.update_one(
         {
-            '_id': user['_id'], 
+            '_id': user_id,  # Ensure the correct string ID is used
             'journal.entries._id': journal_id  
         },
         {
             '$set': update_fields
         },
         array_filters=[
-            {'journal.entries': {'$exists': True}},  # Ensure the journal has entries
+            {'journal.date': {'$exists': True}},  # Ensure the journal has a date
             {'entry._id': journal_id}  # Match the specific entry ID
         ]
     )
@@ -1139,6 +1144,7 @@ def edit_journal(current_user):
         return jsonify({'error': 'Journal entry not found or does not match the user'}), 404
 
     return jsonify({'message': 'Journal entry updated successfully with new date!'}), 200
+
 
 
 # @app.route("/api/edit_journal", methods=['PUT'])
@@ -1196,11 +1202,11 @@ def get_journals(current_user):
     month = data.get('month')
     day = data.get('day')
 
+    user_id = str(current_user['_id'])  # Ensure _id is treated as a string
+
     # Case 1: No filters provided, return all journals
     if not year and not month and not day:
-        all_journals = journal_collection.find_one({
-            'email': current_user['email'] 
-        })
+        all_journals = journal_collection.find_one({'_id': user_id}, {'journal': 1, '_id': 0})
 
         if all_journals and 'journal' in all_journals:
             return jsonify({'journals': all_journals['journal']}), 200
@@ -1209,21 +1215,17 @@ def get_journals(current_user):
 
     # Case 2: Return all months and their journals for the selected year
     elif year and not month and not day:
-        journal_entries = journal_collection.find_one({
-            'email': current_user['email'], 
-            'journal.date': {
-                '$regex': f'.*-.*-{year}$'  # Match year in 'dd-mm-yyyy' format
-            }
-        })
+        journal_entries = journal_collection.find_one(
+            {'_id': user_id, 'journal.date': {'$regex': f'-{year}$'}}, 
+            {'journal': 1, '_id': 0}
+        )
 
-        if journal_entries:
-            # Extract journals grouped by months
+        if journal_entries and 'journal' in journal_entries:
             months_with_journals = {}
             for entry in journal_entries['journal']:
-                entry_month = entry['date'].split('-')[1]
-                if entry_month not in months_with_journals:
-                    months_with_journals[entry_month] = []
-                months_with_journals[entry_month].append(entry)
+                if entry['date'].endswith(year):
+                    entry_month = entry['date'].split('-')[1]
+                    months_with_journals.setdefault(entry_month, []).append(entry)
 
             return jsonify({'months': months_with_journals}), 200
         else:
@@ -1231,21 +1233,17 @@ def get_journals(current_user):
 
     # Case 3: Return all days and their journals for the selected month in the selected year
     elif year and month and not day:
-        journal_entries = journal_collection.find_one({
-            'email': current_user['email'],
-            'journal.date': {
-                '$regex': f'.*-{month}-{year}$'  # Match month and year in 'dd-mm-yyyy' format
-            }
-        })
+        journal_entries = journal_collection.find_one(
+            {'_id': user_id, 'journal.date': {'$regex': f'-{month}-{year}$'}},
+            {'journal': 1, '_id': 0}
+        )
 
-        if journal_entries:
-            # Extract journals grouped by days in the month
+        if journal_entries and 'journal' in journal_entries:
             days_with_journals = {}
             for entry in journal_entries['journal']:
-                entry_day = entry['date'].split('-')[0]
-                if entry_day not in days_with_journals:
-                    days_with_journals[entry_day] = []
-                days_with_journals[entry_day].append(entry)
+                if entry['date'].endswith(f'{month}-{year}'):
+                    entry_day = entry['date'].split('-')[0]
+                    days_with_journals.setdefault(entry_day, []).append(entry)
 
             return jsonify({'days': days_with_journals}), 200
         else:
@@ -1254,23 +1252,20 @@ def get_journals(current_user):
     # Case 4: Return journal entries for the specific day in the selected month and year
     elif year and month and day:
         date = f'{day}-{month}-{year}'
-        journal_entry = journal_collection.find_one({
-            'email': current_user['email'],
-            'journal': {
-                '$elemMatch': {'date': date}
-            }
-        })
+        journal_entry = journal_collection.find_one(
+            {'_id': user_id, 'journal.date': date}, 
+            {'journal.$': 1, '_id': 0}
+        )
 
-        if journal_entry:
-            # Filter the journal entries to return only the entries with the matching date
-            filtered_journals = [entry for entry in journal_entry['journal'] if entry['date'] == date]
-            return jsonify({'journals': filtered_journals}), 200
+        if journal_entry and 'journal' in journal_entry:
+            return jsonify({'journals': journal_entry['journal']}), 200
         else:
             return jsonify({'message': f'No journal entries found for {date}'}), 404
 
     # If no year is provided, return an error
     else:
         return jsonify({'error': 'Year is required to fetch journals'}), 400
+
 
 # ------------------------------------- The End :) ------------------------
 
