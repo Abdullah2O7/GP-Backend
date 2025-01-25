@@ -381,7 +381,8 @@ def get_disease_description(current_user, testname, disease_name):
         return jsonify({
             'name': disease['name'],
             'description': disease['description'],
-            'link': disease['link']
+            'link': disease['link'],
+            'picture': disease['picture']
         }), 200
 
     else:
@@ -404,7 +405,8 @@ def get_disease_description_guest(testname, disease_name):
     return jsonify({
         'name': disease['name'],
         'description': disease['description'],
-        'link': disease['link']
+        'link': disease['link'],
+        'picture': disease['picture']
     }), 200
 
 
