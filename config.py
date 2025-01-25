@@ -6,6 +6,6 @@ class Config:
     MONGO_URI = 'mongodb+srv://abdullahmohamed1047:HuexVTFWCHGP8wXU@cluster0.ydoaic1.mongodb.net/'
     SENDER_EMAIL = 'abdullah.mohamed1047@gmail.com'
     SENDER_PASSWORD = 'ozwd vhmw aada pxnq'
-    GOOGLE_API_KEY="AIzaSyDOjLjuJzlAEfN7VysS80tdPsGpsNiVZOI"
+    GOOGLE_API_KEY="AIzaSyBHP5VbKPIULnM-ZpyM8mL3XIvJd_n5OZ4"
 
 # mongodb://localhost:27017
