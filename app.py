@@ -119,6 +119,7 @@ def send_push_notification(token, title, body):
 
 #  ------------------- Register ---------------------------
 
+
 @app.route("/api/register", methods=['POST'])
 def register_api():
     try:
@@ -165,6 +166,7 @@ def register_api():
         return jsonify({
             'message': f'Account created for {data["username"]}!',
             'user': {
+                'user_id': str(user_id),
                 'username': data['username'],
                 'email': data['email'],
                 'picture': default_image_base64
@@ -213,7 +215,6 @@ def login_api():
         if not phone_info:
             return jsonify({'error': 'Phone information is required'}), 400
 
-        # Check if the phone already exists in login_activity
         existing_activity = users_collection.find_one(
             {'username': user['username'], 'login_activity.mobile': phone_info}
         )
@@ -238,10 +239,10 @@ def login_api():
                 {'$push': {'login_activity': login_activity_object}}
             )
 
-        # Return user data with token
         return jsonify({
             'message': 'Login successful!',
             'user': {
+                'user_id': str(user['_id']),
                 'username': user['username'],
                 'email': user['email'],
                 'picture': default_image_base64
@@ -250,7 +251,6 @@ def login_api():
         }), 200
     else:
         return jsonify({'error': 'Invalid email or password'}), 401
-
 # ------------------- Update the fcm_token -----------------------
 
 @app.route("/api/update_fcm_token", methods=['PUT'])
