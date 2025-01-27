@@ -1031,8 +1031,10 @@ def create_journal(current_user):
         )
         print(f"Created new journal entry: {update_result.upserted_id}")
 
-    return jsonify({'message': 'Journal entry created successfully!'}), 201
-
+   return jsonify({
+        'message': 'Journal entry created successfully!',
+        'journal_id': unique_id  
+    }), 201
 
 #  -----------------------------------------
 def generate_unique_id():
