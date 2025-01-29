@@ -21,7 +21,6 @@ from pytz import timezone
 import json
 import base64
 import pytz
-import deepseek
 from flask_apscheduler import APScheduler
 from hashlib import md5
 from apscheduler.schedulers.background import BackgroundScheduler
