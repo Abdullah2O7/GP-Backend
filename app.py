@@ -994,7 +994,7 @@ def create_journal(current_user):
     title = data['title']
     content = data['content']
     unique_id = generate_unique_id()
-    current_date = datetime.utcnow()
+    current_date = datetime.utcnow().strftime('%Y-%m-%d')
 
     new_entry = {
         '_id': unique_id,
@@ -1005,22 +1005,22 @@ def create_journal(current_user):
     user_id = str(current_user['_id'])  # Ensure _id is treated as a string
 
     print(f"User ID: {user_id}")  # Debugging log
-    print(f"Looking for journal entry on date: {current_date.strftime('%d-%m-%Y')}")
+    print(f"Looking for journal entry on date: {current_date}")
 
     journal_entry = journal_collection.find_one({
         '_id': user_id,
-        'journal.date': current_date.strftime('%d-%m-%Y')  
+        'journal.date': current_date  
     })
 
     if journal_entry:
         update_result = journal_collection.update_one(
-            {'_id': user_id, 'journal.date': current_date.strftime('%d-%m-%Y')},
+            {'_id': user_id, 'journal.date': current_date},
             {'$push': {'journal.$.entries': new_entry}}
         )
         print(f"Updated existing journal: {update_result.modified_count} document(s) updated.")
     else:
         new_journal_entry = {
-            'date': current_date.strftime('%d-%m-%Y'),
+            'date': current_date,
             'entries': [new_entry]
         }
 
@@ -1031,11 +1031,10 @@ def create_journal(current_user):
         )
         print(f"Created new journal entry: {update_result.upserted_id}")
 
-   return jsonify({
+    return jsonify({ 
         'message': 'Journal entry created successfully!',
         'journal_id': unique_id  
     }), 201
-
 #  -----------------------------------------
 def generate_unique_id():
     return str(uuid.uuid4())
