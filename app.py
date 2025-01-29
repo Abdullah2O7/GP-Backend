@@ -120,6 +120,7 @@ def send_push_notification(token, title, body):
 
 #  ------------------- Register ---------------------------
 
+
 @app.route("/api/register", methods=['POST'])
 def register_api():
     try:
@@ -239,7 +240,6 @@ def login_api():
                 {'$push': {'login_activity': login_activity_object}}
             )
 
-        # Return user data with token
         return jsonify({
             'message': 'Login successful!',
             'user': {
@@ -252,7 +252,6 @@ def login_api():
         }), 200
     else:
         return jsonify({'error': 'Invalid email or password'}), 401
-
 # ------------------- Update the fcm_token -----------------------
 
 @app.route("/api/update_fcm_token", methods=['PUT'])
