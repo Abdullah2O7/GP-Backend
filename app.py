@@ -77,6 +77,10 @@ def token_required(f):
             current_user = users_collection.find_one({'username': data['username']})
             if not current_user:
                 return jsonify({'Alert': 'User not found!'}), 401
+            
+            # Add user_id from MongoDB _id
+            current_user['user_id'] = str(current_user['_id'])
+
         except jwt.ExpiredSignatureError:
             return jsonify({'Alert': 'Token has expired!'}), 401
         except jwt.InvalidTokenError:
@@ -995,7 +999,7 @@ def create_journal(current_user):
     title = data['title']
     content = data['content']
     unique_id = generate_unique_id()
-    current_date = datetime.utcnow().strftime('%Y-%m-%d')
+    current_date = datetime.utcnow().strftime('%d-%m-%Y')
 
     new_entry = {
         '_id': unique_id,
@@ -1003,9 +1007,9 @@ def create_journal(current_user):
         'content': content
     }
 
-    user_id = str(current_user['_id'])  # Ensure _id is treated as a string
+    user_id = str(current_user['_id'])  
 
-    print(f"User ID: {user_id}")  # Debugging log
+    print(f"User ID: {user_id}")  
     print(f"Looking for journal entry on date: {current_date}")
 
     journal_entry = journal_collection.find_one({
@@ -1191,7 +1195,6 @@ def edit_journal(current_user):
 #     return jsonify({'message': 'Journal entry updated successfully with new date!'}), 200
 
 # ------------ Get journals -----------------------
-
 @app.route("/api/get-journals", methods=['POST'])
 @token_required
 def get_journals(current_user):
@@ -1206,11 +1209,11 @@ def get_journals(current_user):
     month = data.get('month')
     day = data.get('day')
 
-    user_id = str(current_user['_id'])  # Ensure _id is treated as a string
-
     # Case 1: No filters provided, return all journals
     if not year and not month and not day:
-        all_journals = journal_collection.find_one({'_id': user_id}, {'journal': 1, '_id': 0})
+        all_journals = journal_collection.find_one({
+            '_id': current_user['user_id'] 
+        })
 
         if all_journals and 'journal' in all_journals:
             return jsonify({'journals': all_journals['journal']}), 200
@@ -1219,17 +1222,21 @@ def get_journals(current_user):
 
     # Case 2: Return all months and their journals for the selected year
     elif year and not month and not day:
-        journal_entries = journal_collection.find_one(
-            {'_id': user_id, 'journal.date': {'$regex': f'-{year}$'}}, 
-            {'journal': 1, '_id': 0}
-        )
+        journal_entries = journal_collection.find_one({
+            '_id': current_user['user_id'], 
+            'journal.date': {
+                '$regex': f'.*-.*-{year}$'  # Match year in 'dd-mm-yyyy' format
+            }
+        })
 
-        if journal_entries and 'journal' in journal_entries:
+        if journal_entries:
+            # Extract journals grouped by months
             months_with_journals = {}
             for entry in journal_entries['journal']:
-                if entry['date'].endswith(year):
-                    entry_month = entry['date'].split('-')[1]
-                    months_with_journals.setdefault(entry_month, []).append(entry)
+                entry_month = entry['date'].split('-')[1]
+                if entry_month not in months_with_journals:
+                    months_with_journals[entry_month] = []
+                months_with_journals[entry_month].append(entry)
 
             return jsonify({'months': months_with_journals}), 200
         else:
@@ -1237,17 +1244,21 @@ def get_journals(current_user):
 
     # Case 3: Return all days and their journals for the selected month in the selected year
     elif year and month and not day:
-        journal_entries = journal_collection.find_one(
-            {'_id': user_id, 'journal.date': {'$regex': f'-{month}-{year}$'}},
-            {'journal': 1, '_id': 0}
-        )
+        journal_entries = journal_collection.find_one({
+            '_id': current_user['user_id'],
+            'journal.date': {
+                '$regex': f'.*-{month}-{year}$'  # Match month and year in 'dd-mm-yyyy' format
+            }
+        })
 
-        if journal_entries and 'journal' in journal_entries:
+        if journal_entries:
+            # Extract journals grouped by days in the month
             days_with_journals = {}
             for entry in journal_entries['journal']:
-                if entry['date'].endswith(f'{month}-{year}'):
-                    entry_day = entry['date'].split('-')[0]
-                    days_with_journals.setdefault(entry_day, []).append(entry)
+                entry_day = entry['date'].split('-')[0]
+                if entry_day not in days_with_journals:
+                    days_with_journals[entry_day] = []
+                days_with_journals[entry_day].append(entry)
 
             return jsonify({'days': days_with_journals}), 200
         else:
@@ -1256,19 +1267,100 @@ def get_journals(current_user):
     # Case 4: Return journal entries for the specific day in the selected month and year
     elif year and month and day:
         date = f'{day}-{month}-{year}'
-        journal_entry = journal_collection.find_one(
-            {'_id': user_id, 'journal.date': date}, 
-            {'journal.$': 1, '_id': 0}
-        )
+        journal_entry = journal_collection.find_one({
+            '_id': current_user['user_id'],
+            'journal': {
+                '$elemMatch': {'date': date}
+            }
+        })
 
-        if journal_entry and 'journal' in journal_entry:
-            return jsonify({'journals': journal_entry['journal']}), 200
+        if journal_entry:
+            # Filter the journal entries to return only the entries with the matching date
+            filtered_journals = [entry for entry in journal_entry['journal'] if entry['date'] == date]
+            return jsonify({'journals': filtered_journals}), 200
         else:
             return jsonify({'message': f'No journal entries found for {date}'}), 404
 
     # If no year is provided, return an error
     else:
         return jsonify({'error': 'Year is required to fetch journals'}), 400
+
+
+# @app.route("/api/get-journals", methods=['POST'])
+# @token_required
+# def get_journals(current_user):
+#     try:
+#         data = request.get_json(silent=True) or {}
+#     except:
+#         return jsonify({'error': 'Invalid JSON format'}), 400
+
+#     year = data.get('year')
+#     month = data.get('month')
+#     day = data.get('day')
+
+#     user_id = str(current_user['_id']) 
+
+#     # Case 1: No filters provided, return all journals
+#     if not year and not month and not day:
+#         all_journals = journal_collection.find_one({'_id': user_id}, {'journal': 1, '_id': 0})
+
+#         if all_journals and 'journal' in all_journals:
+#             return jsonify({'journals': all_journals['journal']}), 200
+#         else:
+#             return jsonify({'message': 'No journals found for this user'}), 404
+
+#     # Case 2: Return all months and their journals for the selected year
+#     elif year and not month and not day:
+#         journal_entries = journal_collection.find_one(
+#             {'_id': user_id, 'journal.date': {'$regex': f'-{year}$'}}, 
+#             {'journal': 1, '_id': 0}
+#         )
+
+#         if journal_entries and 'journal' in journal_entries:
+#             months_with_journals = {}
+#             for entry in journal_entries['journal']:
+#                 if entry['date'].endswith(year):
+#                     entry_month = entry['date'].split('-')[1]
+#                     months_with_journals.setdefault(entry_month, []).append(entry)
+
+#             return jsonify({'months': months_with_journals}), 200
+#         else:
+#             return jsonify({'message': f'No journal entries found for {year}'}), 404
+
+#     # Case 3: Return all days and their journals for the selected month in the selected year
+#     elif year and month and not day:
+#         journal_entries = journal_collection.find_one(
+#             {'_id': user_id, 'journal.date': {'$regex': f'-{month}-{year}$'}},
+#             {'journal': 1, '_id': 0}
+#         )
+
+#         if journal_entries and 'journal' in journal_entries:
+#             days_with_journals = {}
+#             for entry in journal_entries['journal']:
+#                 if entry['date'].endswith(f'{month}-{year}'):
+#                     entry_day = entry['date'].split('-')[0]
+#                     days_with_journals.setdefault(entry_day, []).append(entry)
+
+#             return jsonify({'days': days_with_journals}), 200
+#         else:
+#             return jsonify({'message': f'No journal entries found for {month}-{year}'}), 404
+
+#     # Case 4: Return journal entries for the specific day in the selected month and year
+#     elif year and month and day:
+#         date = f'{day}-{month}-{year}'
+#         journal_entry = journal_collection.find_one(
+#             {'_id': user_id, 'journal.date': date}, 
+#             {'journal.$': 1, '_id': 0}
+#         )
+
+#         if journal_entry and 'journal' in journal_entry:
+#             return jsonify({'journals': journal_entry['journal']}), 200
+#         else:
+#             return jsonify({'message': f'No journal entries found for {date}'}), 404
+
+#     # If no year is provided, return an error
+#     else:
+#         return jsonify({'error': 'Year is required to fetch journals'}), 400
 
 
 # ------------------------------------- The End :) ------------------------
