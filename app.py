@@ -352,12 +352,12 @@ def get_disease_description(current_user, testname, disease_name):
                 {'email': current_user['email']},  
                 {'$push': {'tests': new_test_entry}}
             )
-        if current_user.get('notification_enabled', False):
+        if current_user.get('notifications_enabled', False):
             registration_token = current_user.get('fcm_token')
             if registration_token:
                 try:
                     message_title = f"Test '{testname}' Completed"
-                    message_body = f"You successfully completed the test for {disease_name}."
+                    message_body = f"You completed the test for {disease_name}."
                     notification_response = send_push_notification(registration_token, message_title, message_body)
 
                     if notification_response:
