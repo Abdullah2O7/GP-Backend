@@ -352,8 +352,13 @@ def get_disease_description(current_user, testname, disease_name):
                 {'email': current_user['email']},  
                 {'$push': {'tests': new_test_entry}}
             )
+        print("Function is executing!")
         if current_user.get('notifications_enabled', False):
             registration_token = current_user.get('fcm_token')
+
+            print(f"Notification enabled: {current_user.get('notifications_enabled', False)}")
+            print(f"FCM Token: {registration_token}")
+            
             if registration_token:
                 try:
                     message_title = f"Test '{testname}' Completed"
