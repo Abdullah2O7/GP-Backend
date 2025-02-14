@@ -149,6 +149,7 @@ def register_api():
             'password': hashed_password,
             'fcm_token': fcm_token,
             'picture': default_image_base64,
+            "notifications_enabled": "true",
             'login_activity': []
         }
 
