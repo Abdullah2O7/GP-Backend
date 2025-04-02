@@ -1383,6 +1383,20 @@ def get_resources(disorder_name):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+# ------------ 
+
+@app.route('/api/get_all_categoires', methods=['GET'])
+def get_all_disorders():
+    try:
+        disorders = list(resources_collection.find({}, {"_id": 0, "disorder_name": 1, "picture": 1}))
+
+        if not disorders:
+            return jsonify({"error": "No disorders found"}), 404
+
+        return jsonify(disorders), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 # ------------------------------------- The End :) ------------------------
 
 if __name__ == '__main__':
